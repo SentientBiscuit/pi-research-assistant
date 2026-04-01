@@ -1,7 +1,10 @@
+import { mkdir, readdir, rm, writeFile } from "node:fs/promises";
+import { join, resolve } from "node:path";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
 
 const API_BASE = "https://api.semanticscholar.org/graph/v1";
+const ARXIV_API_BASE = "https://export.arxiv.org/api/query";
 const DEFAULT_FIELDS = [
   "paperId",
   "title",
@@ -71,6 +74,129 @@ function summarizePaper(paper: any) {
     openAccessPdf: paper.openAccessPdf ?? null,
     url: paper.url ?? null,
   };
+}
+
+function xmlDecode(text: string) {
+  return text
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&amp;/g, "&")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'");
+}
+
+function extractFirstTag(xml: string, tag: string) {
+  const match = xml.match(new RegExp(`<${tag}[^>]*>([\\s\\S]*?)<\\/${tag}>`, "i"));
+  return match ? xmlDecode(match[1].trim()) : null;
+}
+
+function extractAllTags(xml: string, tag: string) {
+  return Array.from(xml.matchAll(new RegExp(`<${tag}[^>]*>([\\s\\S]*?)<\\/${tag}>`, "gi"))).map((m) => xmlDecode(m[1].trim()));
+}
+
+function normalizeArxivId(arxivId: string) {
+  const normalized = arxivId.trim();
+  if (!normalized) throw new Error("arXiv ID must not be empty");
+  if (!/^[A-Za-z.-/0-9]+(v\d+)?$/.test(normalized)) throw new Error(`Invalid arXiv ID: ${arxivId}`);
+  return normalized;
+}
+
+async function arxivFetchPaper(arxivId: string, signal?: AbortSignal) {
+  const query = new URLSearchParams({ id_list: arxivId });
+  const response = await fetch(`${ARXIV_API_BASE}?${query.toString()}`, {
+    method: "GET",
+    headers: { Accept: "application/atom+xml, application/xml, text/xml" },
+    signal,
+  });
+
+  if (!response.ok) {
+    const body = await response.text().catch(() => "");
+    throw new Error(`arXiv API error ${response.status}: ${body || response.statusText}`);
+  }
+
+  const xml = await response.text();
+  const entryMatch = xml.match(/<entry>([\s\S]*?)<\/entry>/i);
+  if (!entryMatch) throw new Error(`No arXiv paper found for ID: ${arxivId}`);
+
+  const entry = entryMatch[1];
+  const title = extractFirstTag(entry, "title");
+  const summary = extractFirstTag(entry, "summary");
+  const published = extractFirstTag(entry, "published");
+  const updated = extractFirstTag(entry, "updated");
+  const authors = extractAllTags(entry, "name");
+  const categories = Array.from(entry.matchAll(/<category[^>]*term="([^"]+)"[^>]*\/?>(?:<\/category>)?/gi)).map((m) => m[1]);
+  const links = Array.from(entry.matchAll(/<link\s+([^>]+?)\/?>(?:<\/link>)?/gi)).map((m) => m[1]);
+  const pdfUrl = links
+    .map((attrs) => ({
+      href: attrs.match(/href="([^"]+)"/i)?.[1],
+      title: attrs.match(/title="([^"]+)"/i)?.[1],
+      type: attrs.match(/type="([^"]+)"/i)?.[1],
+      rel: attrs.match(/rel="([^"]+)"/i)?.[1],
+    }))
+    .find((link) => link.title === "pdf" || link.type === "application/pdf")?.href;
+
+  return {
+    arxivId,
+    title,
+    abstract: summary,
+    authors,
+    categories,
+    published,
+    updated,
+    absUrl: `https://arxiv.org/abs/${arxivId}`,
+    pdfUrl: pdfUrl || `https://arxiv.org/pdf/${arxivId}.pdf`,
+    sourceUrl: `https://arxiv.org/e-print/${arxivId}`,
+  };
+}
+
+function sanitizeArxivIdForPath(arxivId: string) {
+  return arxivId.replace(/\//g, "__");
+}
+
+async function listFilesRecursive(dir: string, baseDir = dir): Promise<string[]> {
+  const entries = await readdir(dir, { withFileTypes: true });
+  const files = await Promise.all(
+    entries.map(async (entry) => {
+      const fullPath = join(dir, entry.name);
+      if (entry.isDirectory()) return listFilesRecursive(fullPath, baseDir);
+      return [fullPath.slice(baseDir.length + 1)];
+    }),
+  );
+  return files.flat().sort();
+}
+
+function guessMainTexFiles(files: string[]) {
+  return files
+    .filter((file) => file.toLowerCase().endsWith(".tex"))
+    .sort((a, b) => {
+      const score = (name: string) => {
+        const lower = name.toLowerCase();
+        if (lower.endsWith("/main.tex") || lower === "main.tex") return 0;
+        if (lower.endsWith("/paper.tex") || lower === "paper.tex") return 1;
+        if (lower.endsWith("/ms.tex") || lower === "ms.tex") return 2;
+        if (lower.endsWith("/article.tex") || lower === "article.tex") return 3;
+        return 10;
+      };
+      return score(a) - score(b) || a.localeCompare(b);
+    })
+    .slice(0, 10);
+}
+
+function arxivPaperToText(paper: Awaited<ReturnType<typeof arxivFetchPaper>>) {
+  return [
+    `arXiv ID: ${paper.arxivId}`,
+    `Title: ${paper.title ?? "n/a"}`,
+    `Authors: ${paper.authors.join(", ") || "n/a"}`,
+    `Published: ${paper.published ?? "n/a"}`,
+    `Updated: ${paper.updated ?? "n/a"}`,
+    `Categories: ${paper.categories.join(", ") || "n/a"}`,
+    `Abstract URL: ${paper.absUrl}`,
+    `PDF URL: ${paper.pdfUrl}`,
+    `Source URL: ${paper.sourceUrl}`,
+    paper.abstract ? `Abstract: ${paper.abstract}` : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
 }
 
 function paperToText(paper: ReturnType<typeof summarizePaper>) {
@@ -170,6 +296,101 @@ export default function (pi: ExtensionAPI) {
         content: [{ type: "text", text: paperToText(paper) }],
         details: {
           paper,
+        },
+      };
+    },
+  });
+
+  pi.registerTool({
+    name: "arxiv_get_paper",
+    label: "arXiv Get Paper",
+    description: "Fetch arXiv metadata and canonical URLs for a paper using a raw arXiv ID.",
+    promptSnippet: "Fetch one arXiv paper by raw arXiv ID and return metadata plus abstract/PDF/source URLs.",
+    promptGuidelines: [
+      "Use arxiv_get_paper when you already have a raw arXiv ID from Semantic Scholar metadata and need canonical arXiv metadata or links.",
+      "Pass only the raw arXiv ID, not an arXiv URL.",
+    ],
+    parameters: Type.Object({
+      arxivId: Type.String({ description: "Raw arXiv ID, e.g. 1706.03762 or cs.CL/9901001" }),
+    }),
+    async execute(_toolCallId, params, signal) {
+      const arxivId = normalizeArxivId(params.arxivId);
+      const paper = await arxivFetchPaper(arxivId, signal);
+
+      return {
+        content: [{ type: "text", text: arxivPaperToText(paper) }],
+        details: { paper },
+      };
+    },
+  });
+
+  pi.registerTool({
+    name: "arxiv_download_source",
+    label: "arXiv Download Source",
+    description: "Download and extract arXiv source files for a paper using a raw arXiv ID.",
+    promptSnippet: "Download and extract arXiv source files locally when you need the full LaTeX source.",
+    promptGuidelines: [
+      "Use arxiv_download_source only when you need the paper's full source files, not just metadata or links.",
+      "Pass only the raw arXiv ID, not an arXiv URL.",
+    ],
+    parameters: Type.Object({
+      arxivId: Type.String({ description: "Raw arXiv ID, e.g. 1706.03762 or cs.CL/9901001" }),
+      outputDir: Type.Optional(Type.String({ description: "Directory to store extracted source. Defaults to .pi/cache/arxiv/<id> under the current project." })),
+      force: Type.Optional(Type.Boolean({ description: "If true, delete any existing extracted directory and re-download." })),
+    }),
+    async execute(_toolCallId, params, signal, _onUpdate, ctx) {
+      const arxivId = normalizeArxivId(params.arxivId);
+      const targetDir = resolve(ctx.cwd, params.outputDir ?? join(".pi", "cache", "arxiv", sanitizeArxivIdForPath(arxivId)));
+      const archivePath = join(targetDir, "source.tar");
+      const extractDir = join(targetDir, "source");
+
+      if (params.force) {
+        await rm(targetDir, { recursive: true, force: true });
+      }
+
+      await mkdir(extractDir, { recursive: true });
+
+      const response = await fetch(`https://arxiv.org/e-print/${encodeURIComponent(arxivId)}`, {
+        method: "GET",
+        signal,
+      });
+      if (!response.ok) {
+        const body = await response.text().catch(() => "");
+        throw new Error(`arXiv source download error ${response.status}: ${body || response.statusText}`);
+      }
+
+      const buffer = Buffer.from(await response.arrayBuffer());
+      await writeFile(archivePath, buffer);
+
+      const extractResult = await pi.exec("tar", ["-xf", archivePath, "-C", extractDir], { signal, timeout: 120000 });
+      if (extractResult.code !== 0) {
+        throw new Error(`Failed to extract arXiv source with tar: ${extractResult.stderr || extractResult.stdout || `exit code ${extractResult.code}`}`);
+      }
+
+      const files = await listFilesRecursive(extractDir);
+      const texFiles = files.filter((file) => file.toLowerCase().endsWith(".tex"));
+      const mainTexCandidates = guessMainTexFiles(files);
+
+      const text = [
+        `Downloaded arXiv source for ${arxivId}`,
+        `Archive: ${archivePath}`,
+        `Extracted to: ${extractDir}`,
+        `Total files: ${files.length}`,
+        `TeX files: ${texFiles.length}`,
+        mainTexCandidates.length ? `Main TeX candidates: ${mainTexCandidates.join(", ")}` : "Main TeX candidates: none found",
+      ].join("\n");
+
+      return {
+        content: [{ type: "text", text }],
+        details: {
+          arxivId,
+          archivePath,
+          extractDir,
+          fileCount: files.length,
+          texFileCount: texFiles.length,
+          mainTexCandidates,
+          files: files.slice(0, 500),
+          truncatedFileList: files.length > 500,
         },
       };
     },

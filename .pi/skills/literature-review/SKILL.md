@@ -11,6 +11,8 @@ Use this skill for scientific literature discovery and paper triage.
 
 - `semantic_scholar_search`: search for relevant papers
 - `semantic_scholar_get_paper`: fetch details for one paper by paperId, DOI, ArXiv ID, PMID, PMCID, ACL ID, CorpusId, or URL
+- `arxiv_get_paper`: fetch arXiv metadata and canonical abstract/PDF/source URLs using a raw arXiv ID
+- `arxiv_download_source`: download and extract arXiv source files locally when full text/source is needed
 
 ## Workflow
 
@@ -35,7 +37,11 @@ Use this skill for scientific literature discovery and paper triage.
    - authors
    - external IDs and links
 
-5. Summarize results in a research-friendly format:
+5. If you need full text or source files and Semantic Scholar gives an arXiv ID, use the arXiv tools:
+   - use `arxiv_get_paper` when you need canonical arXiv metadata or links
+   - use `arxiv_download_source` when you need the full source files locally
+
+6. Summarize results in a research-friendly format:
    - why the paper matters
    - likely contribution
    - whether it looks foundational, survey-style, or recent/applied
