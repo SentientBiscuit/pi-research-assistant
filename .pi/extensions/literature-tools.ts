@@ -27,30 +27,86 @@ const DEFAULT_FIELDS = [
   "tldr",
 ].join(",");
 
+const rateLimits = {
+  semantic_scholar: { minIntervalMs: 1000, nextAllowedAt: 0, queue: Promise.resolve() },
+  arxiv: { minIntervalMs: 3000, nextAllowedAt: 0, queue: Promise.resolve() },
+} as const;
+
+async function sleep(ms: number, signal?: AbortSignal) {
+  if (ms <= 0) return;
+  await new Promise<void>((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      cleanup();
+      resolve();
+    }, ms);
+
+    const onAbort = () => {
+      clearTimeout(timeout);
+      cleanup();
+      reject(new Error("Aborted while waiting for rate limit"));
+    };
+
+    const cleanup = () => {
+      if (signal) signal.removeEventListener("abort", onAbort);
+    };
+
+    if (signal) {
+      if (signal.aborted) {
+        clearTimeout(timeout);
+        cleanup();
+        reject(new Error("Aborted while waiting for rate limit"));
+        return;
+      }
+      signal.addEventListener("abort", onAbort, { once: true });
+    }
+  });
+}
+
+async function withRateLimit<T>(provider: keyof typeof rateLimits, fn: () => Promise<T>, signal?: AbortSignal): Promise<T> {
+  const state = rateLimits[provider];
+
+  const reservation = state.queue.then(async () => {
+    const now = Date.now();
+    const waitMs = Math.max(0, state.nextAllowedAt - now);
+    await sleep(waitMs, signal);
+    state.nextAllowedAt = Math.max(Date.now(), state.nextAllowedAt) + state.minIntervalMs;
+  });
+
+  state.queue = reservation.catch(() => {});
+  await reservation;
+  return fn();
+}
+
 function getApiKey() {
   return process.env.SEMANTIC_SCHOLAR_API_KEY;
 }
 
 async function semanticScholarFetch(path: string, signal?: AbortSignal) {
-  const headers: Record<string, string> = {
-    Accept: "application/json",
-  };
+  return withRateLimit(
+    "semantic_scholar",
+    async () => {
+      const headers: Record<string, string> = {
+        Accept: "application/json",
+      };
 
-  const apiKey = getApiKey();
-  if (apiKey) headers["x-api-key"] = apiKey;
+      const apiKey = getApiKey();
+      if (apiKey) headers["x-api-key"] = apiKey;
 
-  const response = await fetch(`${API_BASE}${path}`, {
-    method: "GET",
-    headers,
+      const response = await fetch(`${API_BASE}${path}`, {
+        method: "GET",
+        headers,
+        signal,
+      });
+
+      if (!response.ok) {
+        const body = await response.text().catch(() => "");
+        throw new Error(`Semantic Scholar API error ${response.status}: ${body || response.statusText}`);
+      }
+
+      return response.json();
+    },
     signal,
-  });
-
-  if (!response.ok) {
-    const body = await response.text().catch(() => "");
-    throw new Error(`Semantic Scholar API error ${response.status}: ${body || response.statusText}`);
-  }
-
-  return response.json();
+  );
 }
 
 function normalizePaper(paper: any) {
@@ -102,51 +158,57 @@ function normalizeArxivId(arxivId: string) {
 }
 
 async function arxivFetchPaper(arxivId: string, signal?: AbortSignal) {
-  const query = new URLSearchParams({ id_list: arxivId });
-  const response = await fetch(`${ARXIV_API_BASE}?${query.toString()}`, {
-    method: "GET",
-    headers: { Accept: "application/atom+xml, application/xml, text/xml" },
+  return withRateLimit(
+    "arxiv",
+    async () => {
+      const query = new URLSearchParams({ id_list: arxivId });
+      const response = await fetch(`${ARXIV_API_BASE}?${query.toString()}`, {
+        method: "GET",
+        headers: { Accept: "application/atom+xml, application/xml, text/xml" },
+        signal,
+      });
+
+      if (!response.ok) {
+        const body = await response.text().catch(() => "");
+        throw new Error(`arXiv API error ${response.status}: ${body || response.statusText}`);
+      }
+
+      const xml = await response.text();
+      const entryMatch = xml.match(/<entry>([\s\S]*?)<\/entry>/i);
+      if (!entryMatch) throw new Error(`No arXiv paper found for ID: ${arxivId}`);
+
+      const entry = entryMatch[1];
+      const title = extractFirstTag(entry, "title");
+      const summary = extractFirstTag(entry, "summary");
+      const published = extractFirstTag(entry, "published");
+      const updated = extractFirstTag(entry, "updated");
+      const authors = extractAllTags(entry, "name");
+      const categories = Array.from(entry.matchAll(/<category[^>]*term="([^"]+)"[^>]*\/?>(?:<\/category>)?/gi)).map((m) => m[1]);
+      const links = Array.from(entry.matchAll(/<link\s+([^>]+?)\/?>(?:<\/link>)?/gi)).map((m) => m[1]);
+      const pdfUrl = links
+        .map((attrs) => ({
+          href: attrs.match(/href="([^"]+)"/i)?.[1],
+          title: attrs.match(/title="([^"]+)"/i)?.[1],
+          type: attrs.match(/type="([^"]+)"/i)?.[1],
+          rel: attrs.match(/rel="([^"]+)"/i)?.[1],
+        }))
+        .find((link) => link.title === "pdf" || link.type === "application/pdf")?.href;
+
+      return {
+        arxivId,
+        title,
+        abstract: summary,
+        authors,
+        categories,
+        published,
+        updated,
+        absUrl: `https://arxiv.org/abs/${arxivId}`,
+        pdfUrl: pdfUrl || `https://arxiv.org/pdf/${arxivId}.pdf`,
+        sourceUrl: `https://arxiv.org/e-print/${arxivId}`,
+      };
+    },
     signal,
-  });
-
-  if (!response.ok) {
-    const body = await response.text().catch(() => "");
-    throw new Error(`arXiv API error ${response.status}: ${body || response.statusText}`);
-  }
-
-  const xml = await response.text();
-  const entryMatch = xml.match(/<entry>([\s\S]*?)<\/entry>/i);
-  if (!entryMatch) throw new Error(`No arXiv paper found for ID: ${arxivId}`);
-
-  const entry = entryMatch[1];
-  const title = extractFirstTag(entry, "title");
-  const summary = extractFirstTag(entry, "summary");
-  const published = extractFirstTag(entry, "published");
-  const updated = extractFirstTag(entry, "updated");
-  const authors = extractAllTags(entry, "name");
-  const categories = Array.from(entry.matchAll(/<category[^>]*term="([^"]+)"[^>]*\/?>(?:<\/category>)?/gi)).map((m) => m[1]);
-  const links = Array.from(entry.matchAll(/<link\s+([^>]+?)\/?>(?:<\/link>)?/gi)).map((m) => m[1]);
-  const pdfUrl = links
-    .map((attrs) => ({
-      href: attrs.match(/href="([^"]+)"/i)?.[1],
-      title: attrs.match(/title="([^"]+)"/i)?.[1],
-      type: attrs.match(/type="([^"]+)"/i)?.[1],
-      rel: attrs.match(/rel="([^"]+)"/i)?.[1],
-    }))
-    .find((link) => link.title === "pdf" || link.type === "application/pdf")?.href;
-
-  return {
-    arxivId,
-    title,
-    abstract: summary,
-    authors,
-    categories,
-    published,
-    updated,
-    absUrl: `https://arxiv.org/abs/${arxivId}`,
-    pdfUrl: pdfUrl || `https://arxiv.org/pdf/${arxivId}.pdf`,
-    sourceUrl: `https://arxiv.org/e-print/${arxivId}`,
-  };
+  );
 }
 
 function sanitizeArxivIdForPath(arxivId: string) {
@@ -320,10 +382,15 @@ export default function (pi: ExtensionAPI) {
 
       await mkdir(extractDir, { recursive: true });
 
-      const response = await fetch(`https://arxiv.org/e-print/${encodeURIComponent(arxivId)}`, {
-        method: "GET",
+      const response = await withRateLimit(
+        "arxiv",
+        () =>
+          fetch(`https://arxiv.org/e-print/${encodeURIComponent(arxivId)}`, {
+            method: "GET",
+            signal,
+          }),
         signal,
-      });
+      );
       if (!response.ok) {
         const body = await response.text().catch(() => "");
         throw new Error(`arXiv source download error ${response.status}: ${body || response.statusText}`);
