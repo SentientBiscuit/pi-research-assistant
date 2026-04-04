@@ -27,6 +27,8 @@ const DEFAULT_FIELDS = [
   "tldr",
 ].join(",");
 
+const MAX_RETRIES = 3;
+
 const rateLimits = {
   semantic_scholar: { minIntervalMs: 1000, nextAllowedAt: 0, queue: Promise.resolve() },
   arxiv: { minIntervalMs: 3000, nextAllowedAt: 0, queue: Promise.resolve() },
@@ -77,36 +79,71 @@ async function withRateLimit<T>(provider: keyof typeof rateLimits, fn: () => Pro
   return fn();
 }
 
+function isRetryableStatus(status: number) {
+  return status === 429 || status === 500 || status === 502 || status === 503 || status === 504;
+}
+
+function isRetryableErrorMessage(message: string) {
+  return /rate.?limit|too many requests|overloaded|service.?unavailable|temporar|timeout|timed out|connection.?reset|connection.?refused|network/i.test(
+    message,
+  );
+}
+
+async function fetchWithRetries(
+  provider: keyof typeof rateLimits,
+  url: string,
+  init: RequestInit,
+  signal?: AbortSignal,
+): Promise<Response> {
+  let lastError: Error | undefined;
+
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    if (signal?.aborted) throw new Error("Request was aborted");
+
+    try {
+      const response = await withRateLimit(provider, () => fetch(url, { ...init, signal }), signal);
+      if (response.ok) {
+        return response;
+      }
+      
+      const body = await response.text().catch(() => "");
+      if (attempt < MAX_RETRIES && (isRetryableStatus(response.status) || isRetryableErrorMessage(body))) {
+        await sleep(rateLimits[provider].minIntervalMs * 2 ** attempt, signal);
+        continue;
+      }
+
+      throw new Error(`${provider} API error ${response.status}: ${body || response.statusText}`);
+    } catch (error) {
+      const err = error instanceof Error ? error : new Error(String(error));
+      if (err.name === "AbortError" || err.message === "Request was aborted" || signal?.aborted) {
+        throw new Error("Request was aborted");
+      }
+      lastError = err;
+      if (attempt < MAX_RETRIES && isRetryableErrorMessage(err.message)) {
+        await sleep(rateLimits[provider].minIntervalMs * 2 ** attempt, signal);
+        continue;
+      }
+      throw err;
+    }
+  }
+
+  throw lastError ?? new Error(`Failed to fetch ${url}`);
+}
+
 function getApiKey() {
   return process.env.SEMANTIC_SCHOLAR_API_KEY;
 }
 
 async function semanticScholarFetch(path: string, signal?: AbortSignal) {
-  return withRateLimit(
-    "semantic_scholar",
-    async () => {
-      const headers: Record<string, string> = {
-        Accept: "application/json",
-      };
+  const headers: Record<string, string> = {
+    Accept: "application/json",
+  };
 
-      const apiKey = getApiKey();
-      if (apiKey) headers["x-api-key"] = apiKey;
+  const apiKey = getApiKey();
+  if (apiKey) headers["x-api-key"] = apiKey;
 
-      const response = await fetch(`${API_BASE}${path}`, {
-        method: "GET",
-        headers,
-        signal,
-      });
-
-      if (!response.ok) {
-        const body = await response.text().catch(() => "");
-        throw new Error(`Semantic Scholar API error ${response.status}: ${body || response.statusText}`);
-      }
-
-      return response.json();
-    },
-    signal,
-  );
+  const response = await fetchWithRetries("semantic_scholar", `${API_BASE}${path}`, { method: "GET", headers }, signal);
+  return response.json();
 }
 
 function normalizePaper(paper: any) {
@@ -158,57 +195,50 @@ function normalizeArxivId(arxivId: string) {
 }
 
 async function arxivFetchPaper(arxivId: string, signal?: AbortSignal) {
-  return withRateLimit(
+  const query = new URLSearchParams({ id_list: arxivId });
+  const response = await fetchWithRetries(
     "arxiv",
-    async () => {
-      const query = new URLSearchParams({ id_list: arxivId });
-      const response = await fetch(`${ARXIV_API_BASE}?${query.toString()}`, {
-        method: "GET",
-        headers: { Accept: "application/atom+xml, application/xml, text/xml" },
-        signal,
-      });
-
-      if (!response.ok) {
-        const body = await response.text().catch(() => "");
-        throw new Error(`arXiv API error ${response.status}: ${body || response.statusText}`);
-      }
-
-      const xml = await response.text();
-      const entryMatch = xml.match(/<entry>([\s\S]*?)<\/entry>/i);
-      if (!entryMatch) throw new Error(`No arXiv paper found for ID: ${arxivId}`);
-
-      const entry = entryMatch[1];
-      const title = extractFirstTag(entry, "title");
-      const summary = extractFirstTag(entry, "summary");
-      const published = extractFirstTag(entry, "published");
-      const updated = extractFirstTag(entry, "updated");
-      const authors = extractAllTags(entry, "name");
-      const categories = Array.from(entry.matchAll(/<category[^>]*term="([^"]+)"[^>]*\/?>(?:<\/category>)?/gi)).map((m) => m[1]);
-      const links = Array.from(entry.matchAll(/<link\s+([^>]+?)\/?>(?:<\/link>)?/gi)).map((m) => m[1]);
-      const pdfUrl = links
-        .map((attrs) => ({
-          href: attrs.match(/href="([^"]+)"/i)?.[1],
-          title: attrs.match(/title="([^"]+)"/i)?.[1],
-          type: attrs.match(/type="([^"]+)"/i)?.[1],
-          rel: attrs.match(/rel="([^"]+)"/i)?.[1],
-        }))
-        .find((link) => link.title === "pdf" || link.type === "application/pdf")?.href;
-
-      return {
-        arxivId,
-        title,
-        abstract: summary,
-        authors,
-        categories,
-        published,
-        updated,
-        absUrl: `https://arxiv.org/abs/${arxivId}`,
-        pdfUrl: pdfUrl || `https://arxiv.org/pdf/${arxivId}.pdf`,
-        sourceUrl: `https://arxiv.org/e-print/${arxivId}`,
-      };
+    `${ARXIV_API_BASE}?${query.toString()}`,
+    {
+      method: "GET",
+      headers: { Accept: "application/atom+xml, application/xml, text/xml" },
     },
     signal,
   );
+  const xml = await response.text();
+
+  const entryMatch = xml.match(/<entry>([\s\S]*?)<\/entry>/i);
+  if (!entryMatch) throw new Error(`No arXiv paper found for ID: ${arxivId}`);
+
+  const entry = entryMatch[1];
+  const title = extractFirstTag(entry, "title");
+  const summary = extractFirstTag(entry, "summary");
+  const published = extractFirstTag(entry, "published");
+  const updated = extractFirstTag(entry, "updated");
+  const authors = extractAllTags(entry, "name");
+  const categories = Array.from(entry.matchAll(/<category[^>]*term="([^"]+)"[^>]*\/?>(?:<\/category>)?/gi)).map((m) => m[1]);
+  const links = Array.from(entry.matchAll(/<link\s+([^>]+?)\/?>(?:<\/link>)?/gi)).map((m) => m[1]);
+  const pdfUrl = links
+    .map((attrs) => ({
+      href: attrs.match(/href="([^"]+)"/i)?.[1],
+      title: attrs.match(/title="([^"]+)"/i)?.[1],
+      type: attrs.match(/type="([^"]+)"/i)?.[1],
+      rel: attrs.match(/rel="([^"]+)"/i)?.[1],
+    }))
+    .find((link) => link.title === "pdf" || link.type === "application/pdf")?.href;
+
+  return {
+    arxivId,
+    title,
+    abstract: summary,
+    authors,
+    categories,
+    published,
+    updated,
+    absUrl: `https://arxiv.org/abs/${arxivId}`,
+    pdfUrl: pdfUrl || `https://arxiv.org/pdf/${arxivId}.pdf`,
+    sourceUrl: `https://arxiv.org/e-print/${arxivId}`,
+  };
 }
 
 function sanitizeArxivIdForPath(arxivId: string) {
@@ -383,20 +413,14 @@ export default function (pi: ExtensionAPI) {
 
       await mkdir(extractDir, { recursive: true });
 
-      const response = await withRateLimit(
+      const response = await fetchWithRetries(
         "arxiv",
-        () =>
-          fetch(`https://arxiv.org/e-print/${encodeURIComponent(arxivId)}`, {
-            method: "GET",
-            signal,
-          }),
+        `https://arxiv.org/e-print/${encodeURIComponent(arxivId)}`,
+        {
+          method: "GET",
+        },
         signal,
       );
-      if (!response.ok) {
-        const body = await response.text().catch(() => "");
-        throw new Error(`arXiv source download error ${response.status}: ${body || response.statusText}`);
-      }
-
       const buffer = Buffer.from(await response.arrayBuffer());
       await writeFile(archivePath, buffer);
 
