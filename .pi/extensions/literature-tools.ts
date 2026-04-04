@@ -318,9 +318,10 @@ export default function (pi: ExtensionAPI) {
 
       const result = await semanticScholarFetch(`/paper/search?${search.toString()}`, signal);
       const papers = Array.isArray(result.data) ? result.data.map(normalizePaper) : [];
-      const text = papers.length
+      const resultsText = papers.length
         ? papers.map((paper: ReturnType<typeof normalizePaper>, i: number) => `Result ${i + 1}\n${paperToText(paper)}`).join("\n\n---\n\n")
-        : `No Semantic Scholar papers found for query: ${params.query}`;
+        : `No Semantic Scholar papers found.`;
+      const text = [`Query: ${params.query}`, `Limit: ${limit}`, resultsText].join("\n\n");
 
       return {
         content: [{ type: "text", text }],
