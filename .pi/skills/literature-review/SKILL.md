@@ -10,7 +10,6 @@ Use this skill for scientific literature discovery, paper triage, and evidence g
 ## Available tools
 
 - `semantic_scholar_search`: search for relevant papers
-- `semantic_scholar_get_paper`: fetch details for one paper by paperId, DOI, ArXiv ID, PMID, PMCID, ACL ID, CorpusId, or URL
 - `arxiv_get_paper`: fetch arXiv metadata and canonical abstract/PDF/source URLs using a raw arXiv ID
 - `arxiv_download_source`: download and extract arXiv source files locally when full text/source is needed
 
@@ -22,6 +21,7 @@ Use this skill when you need to:
 - gather evidence for or against a hypothesis
 - understand what has already been tried
 - collect related work for novelty assessment
+- progressively inspect papers from abstract-level signals first, then full text only when necessary
 
 ## Workflow
 
@@ -39,13 +39,10 @@ Use this skill when you need to:
    - recent papers likely to reflect the current frontier
    - papers most directly relevant to the stated goal
 
-4. Use `semantic_scholar_get_paper` on the most relevant hits to inspect:
-   - abstract
-   - TL;DR
-   - citation counts
-   - venue
-   - authors
-   - external IDs and links
+4. Work progressively through papers:
+   - start with titles, TL;DRs, abstracts, citation counts, and metadata from `semantic_scholar_search`
+   - identify the most relevant papers from those search results
+   - fetch full text only when abstracts are insufficient, for example when you need methodology details, specific experimental results, or need to resolve contradictions
 
 5. If you need canonical arXiv links or full source text and Semantic Scholar gives an arXiv ID, use the arXiv tools:
    - use `arxiv_get_paper` when you need canonical arXiv metadata or links

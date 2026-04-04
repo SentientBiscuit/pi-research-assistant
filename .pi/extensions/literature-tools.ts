@@ -53,7 +53,7 @@ async function semanticScholarFetch(path: string, signal?: AbortSignal) {
   return response.json();
 }
 
-function summarizePaper(paper: any) {
+function normalizePaper(paper: any) {
   return {
     paperId: paper.paperId,
     title: paper.title,
@@ -199,7 +199,7 @@ function arxivPaperToText(paper: Awaited<ReturnType<typeof arxivFetchPaper>>) {
     .join("\n");
 }
 
-function paperToText(paper: ReturnType<typeof summarizePaper>) {
+function paperToText(paper: ReturnType<typeof normalizePaper>) {
   const authors = paper.authors.slice(0, 8).map((a) => a.name).join(", ");
   const idParts = Object.entries(paper.externalIds || {})
     .filter(([, v]) => typeof v === "string" && v.length > 0)
@@ -234,7 +234,6 @@ export default function (pi: ExtensionAPI) {
     promptSnippet: "Search Semantic Scholar for scientific papers by topic, keyword, or natural-language query.",
     promptGuidelines: [
       "Use semantic_scholar_search when the user wants to find, survey, or shortlist scientific papers.",
-      "Use semantic_scholar_get_paper after search when you need a deeper view of a specific paper.",
     ],
     parameters: Type.Object({
       query: Type.String({ description: "Search query for papers" }),
@@ -256,9 +255,9 @@ export default function (pi: ExtensionAPI) {
       }
 
       const result = await semanticScholarFetch(`/paper/search?${search.toString()}`, signal);
-      const papers = Array.isArray(result.data) ? result.data.map(summarizePaper) : [];
+      const papers = Array.isArray(result.data) ? result.data.map(normalizePaper) : [];
       const text = papers.length
-        ? papers.map((paper: ReturnType<typeof summarizePaper>, i: number) => `Result ${i + 1}\n${paperToText(paper)}`).join("\n\n---\n\n")
+        ? papers.map((paper: ReturnType<typeof normalizePaper>, i: number) => `Result ${i + 1}\n${paperToText(paper)}`).join("\n\n---\n\n")
         : `No Semantic Scholar papers found for query: ${params.query}`;
 
       return {
@@ -267,35 +266,6 @@ export default function (pi: ExtensionAPI) {
           query: params.query,
           total: papers.length,
           papers,
-        },
-      };
-    },
-  });
-
-  pi.registerTool({
-    name: "semantic_scholar_get_paper",
-    label: "Semantic Scholar Get Paper",
-    description: "Fetch detailed metadata for a specific paper from Semantic Scholar using a paper ID, DOI, ArXiv ID, PMID, PMCID, ACL ID, CorpusId, or URL.",
-    promptSnippet: "Fetch one paper from Semantic Scholar by identifier such as DOI, ArXiv ID, Semantic Scholar paperId, or URL.",
-    promptGuidelines: [
-      "Use semantic_scholar_get_paper when the user names a specific paper or when you have an identifier from search results.",
-    ],
-    parameters: Type.Object({
-      paperId: Type.String({ description: "Paper identifier, e.g. Semantic Scholar paperId, DOI:10..., ARXIV:..., PMID:..., PMCID:..., ACL:..., CorpusId:..., or a paper URL." }),
-      fields: Type.Optional(Type.String({ description: `Comma-separated Semantic Scholar fields to request. Default: ${DEFAULT_FIELDS}` })),
-    }),
-    async execute(_toolCallId, params, signal) {
-      const search = new URLSearchParams();
-      search.set("fields", params.fields || DEFAULT_FIELDS);
-      const paperId = encodeURIComponent(params.paperId);
-
-      const result = await semanticScholarFetch(`/paper/${paperId}?${search.toString()}`, signal);
-      const paper = summarizePaper(result);
-
-      return {
-        content: [{ type: "text", text: paperToText(paper) }],
-        details: {
-          paper,
         },
       };
     },
