@@ -308,30 +308,42 @@ export default function (pi: ExtensionAPI) {
         await rm(targetDir, { recursive: true, force: true });
       }
 
-      await mkdir(extractDir, { recursive: true });
-
-      const response = await fetchWithRetries(
-        "arxiv",
-        `https://arxiv.org/e-print/${encodeURIComponent(arxivId)}`,
-        {
-          method: "GET",
-        },
-        signal,
-      );
-      const buffer = Buffer.from(await response.arrayBuffer());
-      await writeFile(archivePath, buffer);
-
-      const extractResult = await pi.exec("tar", ["-xf", archivePath, "-C", extractDir], { signal, timeout: 120000 });
-      if (extractResult.code !== 0) {
-        throw new Error(`Failed to extract arXiv source with tar: ${extractResult.stderr || extractResult.stdout || `exit code ${extractResult.code}`}`);
+      let cacheHit = false;
+      let files: string[] = [];
+      try {
+        files = await listFilesRecursive(extractDir);
+        cacheHit = files.length > 0;
+      } catch {
+        cacheHit = false;
       }
 
-      const files = await listFilesRecursive(extractDir);
+      if (!cacheHit) {
+        await mkdir(extractDir, { recursive: true });
+
+        const response = await fetchWithRetries(
+          "arxiv",
+          `https://arxiv.org/e-print/${encodeURIComponent(arxivId)}`,
+          {
+            method: "GET",
+          },
+          signal,
+        );
+        const buffer = Buffer.from(await response.arrayBuffer());
+        await writeFile(archivePath, buffer);
+
+        const extractResult = await pi.exec("tar", ["-xf", archivePath, "-C", extractDir], { signal, timeout: 120000 });
+        if (extractResult.code !== 0) {
+          throw new Error(`Failed to extract arXiv source with tar: ${extractResult.stderr || extractResult.stdout || `exit code ${extractResult.code}`}`);
+        }
+
+        files = await listFilesRecursive(extractDir);
+      }
+
       const texFiles = files.filter((file) => file.toLowerCase().endsWith(".tex"));
       const mainTexCandidates = guessMainTexFiles(files);
 
       const text = [
-        `Downloaded arXiv source for ${arxivId}`,
+        `${cacheHit ? "Using cached" : "Downloaded"} arXiv source for ${arxivId}`,
         `Title: ${title}`,
         `Archive: ${archivePath}`,
         `Extracted to: ${extractDir}`,
@@ -345,6 +357,7 @@ export default function (pi: ExtensionAPI) {
         details: {
           arxivId,
           title,
+          cacheHit,
           archivePath,
           extractDir,
           fileCount: files.length,
