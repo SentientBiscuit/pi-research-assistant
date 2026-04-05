@@ -3,7 +3,7 @@ import { join, resolve } from "node:path";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
 
-const API_BASE = "https://api.semanticscholar.org/graph/v1";
+const S2_API_BASE = "https://api.semanticscholar.org/graph/v1";
 const DEFAULT_FIELDS = [
   "paperId",
   "title",
@@ -141,7 +141,7 @@ async function semanticScholarFetch(path: string, signal?: AbortSignal) {
   const apiKey = getApiKey();
   if (apiKey) headers["x-api-key"] = apiKey;
 
-  const response = await fetchWithRetries("semantic_scholar", `${API_BASE}${path}`, { method: "GET", headers }, signal);
+  const response = await fetchWithRetries("semantic_scholar", `${S2_API_BASE}${path}`, { method: "GET", headers }, signal);
   return response.json();
 }
 
@@ -292,11 +292,14 @@ export default function (pi: ExtensionAPI) {
     ],
     parameters: Type.Object({
       arxivId: Type.String({ description: "Raw arXiv ID, e.g. 1706.03762 or cs.CL/9901001" }),
+      title: Type.String({ description: "Paper title." }),
       outputDir: Type.Optional(Type.String({ description: "Directory to store extracted source. Defaults to .pi/cache/arxiv/<id> under the current project." })),
       force: Type.Optional(Type.Boolean({ description: "If true, delete any existing extracted directory and re-download." })),
     }),
     async execute(_toolCallId, params, signal, _onUpdate, ctx) {
       const arxivId = normalizeArxivId(params.arxivId);
+      const title = params.title.trim();
+      if (!title) throw new Error("Paper title must not be empty");
       const targetDir = resolve(ctx.cwd, params.outputDir ?? join(".pi", "cache", "arxiv", sanitizeArxivIdForPath(arxivId)));
       const archivePath = join(targetDir, "source.tar");
       const extractDir = join(targetDir, "source");
@@ -329,6 +332,7 @@ export default function (pi: ExtensionAPI) {
 
       const text = [
         `Downloaded arXiv source for ${arxivId}`,
+        `Title: ${title}`,
         `Archive: ${archivePath}`,
         `Extracted to: ${extractDir}`,
         `Total files: ${files.length}`,
@@ -340,6 +344,7 @@ export default function (pi: ExtensionAPI) {
         content: [{ type: "text", text }],
         details: {
           arxivId,
+          title,
           archivePath,
           extractDir,
           fileCount: files.length,
