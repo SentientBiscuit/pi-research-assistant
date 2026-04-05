@@ -8,7 +8,6 @@ This project equips pi with a small set of research-oriented skills and literatu
 The local extension `.pi/extensions/literature-tools.ts` provides:
 
 - `semantic_scholar_search` — search papers in Semantic Scholar
-- `arxiv_get_paper` — fetch canonical arXiv metadata and links from a raw arXiv ID
 - `arxiv_download_source` — download and extract arXiv source files locally
 
 ### Skills

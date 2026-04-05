@@ -10,7 +10,6 @@ Use this skill for scientific literature discovery, paper triage, and evidence g
 ## Available tools
 
 - `semantic_scholar_search`: search for relevant papers
-- `arxiv_get_paper`: fetch arXiv metadata and canonical abstract/PDF/source URLs using a raw arXiv ID
 - `arxiv_download_source`: download and extract arXiv source files locally when full text/source is needed
 
 ## When to use
@@ -54,9 +53,7 @@ Use this skill when you need to:
    - identify the most relevant papers from those search results
    - fetch full text only when abstracts are insufficient, for example when you need methodology details, specific experimental results, or need to resolve contradictions
 
-6. If you need canonical arXiv links or full source text and Semantic Scholar gives an arXiv ID, use the arXiv tools:
-   - use `arxiv_get_paper` when you need canonical arXiv metadata or links
-   - use `arxiv_download_source` only when you need the source files locally
+6. If you need full source text and Semantic Scholar gives an arXiv ID, use `arxiv_download_source`.
 
 7. Use multi-hop query expansion when a promising paper or theme appears:
    - search using the paper's key terms

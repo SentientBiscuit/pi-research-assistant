@@ -4,7 +4,6 @@ import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
 
 const API_BASE = "https://api.semanticscholar.org/graph/v1";
-const ARXIV_API_BASE = "https://export.arxiv.org/api/query";
 const DEFAULT_FIELDS = [
   "paperId",
   "title",
@@ -169,76 +168,11 @@ function normalizePaper(paper: any) {
   };
 }
 
-function xmlDecode(text: string) {
-  return text
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&amp;/g, "&")
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'");
-}
-
-function extractFirstTag(xml: string, tag: string) {
-  const match = xml.match(new RegExp(`<${tag}[^>]*>([\\s\\S]*?)<\\/${tag}>`, "i"));
-  return match ? xmlDecode(match[1].trim()) : null;
-}
-
-function extractAllTags(xml: string, tag: string) {
-  return Array.from(xml.matchAll(new RegExp(`<${tag}[^>]*>([\\s\\S]*?)<\\/${tag}>`, "gi"))).map((m) => xmlDecode(m[1].trim()));
-}
-
 function normalizeArxivId(arxivId: string) {
   const normalized = arxivId.trim();
   if (!normalized) throw new Error("arXiv ID must not be empty");
   if (!/^[A-Za-z.-/0-9]+(v\d+)?$/.test(normalized)) throw new Error(`Invalid arXiv ID: ${arxivId}`);
   return normalized;
-}
-
-async function arxivFetchPaper(arxivId: string, signal?: AbortSignal) {
-  const query = new URLSearchParams({ id_list: arxivId });
-  const response = await fetchWithRetries(
-    "arxiv",
-    `${ARXIV_API_BASE}?${query.toString()}`,
-    {
-      method: "GET",
-      headers: { Accept: "application/atom+xml, application/xml, text/xml" },
-    },
-    signal,
-  );
-  const xml = await response.text();
-
-  const entryMatch = xml.match(/<entry>([\s\S]*?)<\/entry>/i);
-  if (!entryMatch) throw new Error(`No arXiv paper found for ID: ${arxivId}`);
-
-  const entry = entryMatch[1];
-  const title = extractFirstTag(entry, "title");
-  const summary = extractFirstTag(entry, "summary");
-  const published = extractFirstTag(entry, "published");
-  const updated = extractFirstTag(entry, "updated");
-  const authors = extractAllTags(entry, "name");
-  const categories = Array.from(entry.matchAll(/<category[^>]*term="([^"]+)"[^>]*\/?>(?:<\/category>)?/gi)).map((m) => m[1]);
-  const links = Array.from(entry.matchAll(/<link\s+([^>]+?)\/?>(?:<\/link>)?/gi)).map((m) => m[1]);
-  const pdfUrl = links
-    .map((attrs) => ({
-      href: attrs.match(/href="([^"]+)"/i)?.[1],
-      title: attrs.match(/title="([^"]+)"/i)?.[1],
-      type: attrs.match(/type="([^"]+)"/i)?.[1],
-      rel: attrs.match(/rel="([^"]+)"/i)?.[1],
-    }))
-    .find((link) => link.title === "pdf" || link.type === "application/pdf")?.href;
-
-  return {
-    arxivId,
-    title,
-    abstract: summary,
-    authors,
-    categories,
-    published,
-    updated,
-    absUrl: `https://arxiv.org/abs/${arxivId}`,
-    pdfUrl: pdfUrl || `https://arxiv.org/pdf/${arxivId}.pdf`,
-    sourceUrl: `https://arxiv.org/e-print/${arxivId}`,
-  };
 }
 
 function sanitizeArxivIdForPath(arxivId: string) {
@@ -272,23 +206,6 @@ function guessMainTexFiles(files: string[]) {
       return score(a) - score(b) || a.localeCompare(b);
     })
     .slice(0, 10);
-}
-
-function arxivPaperToText(paper: Awaited<ReturnType<typeof arxivFetchPaper>>) {
-  return [
-    `arXiv ID: ${paper.arxivId}`,
-    `Title: ${paper.title ?? "n/a"}`,
-    `Authors: ${paper.authors.join(", ") || "n/a"}`,
-    `Published: ${paper.published ?? "n/a"}`,
-    `Updated: ${paper.updated ?? "n/a"}`,
-    `Categories: ${paper.categories.join(", ") || "n/a"}`,
-    `Abstract URL: ${paper.absUrl}`,
-    `PDF URL: ${paper.pdfUrl}`,
-    `Source URL: ${paper.sourceUrl}`,
-    paper.abstract ? `Abstract: ${paper.abstract}` : "",
-  ]
-    .filter(Boolean)
-    .join("\n");
 }
 
 function paperToText(paper: ReturnType<typeof normalizePaper>) {
@@ -360,29 +277,6 @@ export default function (pi: ExtensionAPI) {
           total: papers.length,
           papers,
         },
-      };
-    },
-  });
-
-  pi.registerTool({
-    name: "arxiv_get_paper",
-    label: "arXiv Get Paper",
-    description: "Fetch arXiv metadata and canonical URLs for a paper using a raw arXiv ID.",
-    promptSnippet: "Fetch one arXiv paper by raw arXiv ID and return metadata plus abstract/PDF/source URLs.",
-    promptGuidelines: [
-      "Use arxiv_get_paper when you already have a raw arXiv ID from Semantic Scholar metadata and need canonical arXiv metadata or links.",
-      "Pass only the raw arXiv ID, not an arXiv URL.",
-    ],
-    parameters: Type.Object({
-      arxivId: Type.String({ description: "Raw arXiv ID, e.g. 1706.03762 or cs.CL/9901001" }),
-    }),
-    async execute(_toolCallId, params, signal) {
-      const arxivId = normalizeArxivId(params.arxivId);
-      const paper = await arxivFetchPaper(arxivId, signal);
-
-      return {
-        content: [{ type: "text", text: arxivPaperToText(paper) }],
-        details: { paper },
       };
     },
   });
