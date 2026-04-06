@@ -24,6 +24,7 @@ Generate multiple candidate hypotheses that are:
 - testable
 - connected to the stated goal
 - grounded in literature evidence or identified gaps
+- self-contained and understandable to a reader who has not read the source papers
 
 ## Workflow
 
@@ -41,8 +42,11 @@ Generate multiple candidate hypotheses that are:
    - what mechanism or intuition supports it
    - why it may matter
    - what evidence would support or falsify it
+   - any specialized terms in plain language
 6. Prefer narrower, testable claims over broad visionary statements.
 7. Explicitly note uncertainty and assumptions.
+8. Assume the reader has not read the source papers. Define non-obvious terms and avoid compressed source-specific shorthand.
+9. Prefer clarity and self-contained explanation over brevity, even if the artifact becomes longer.
 
 ## Good practices
 
@@ -52,20 +56,28 @@ Generate multiple candidate hypotheses that are:
 - Avoid vague statements like “this may improve performance” without a mechanism.
 - Produce alternatives that differ in substance, not superficial wording.
 - If the problem is underspecified, state what assumptions you are making.
+- Do not assume the reader is familiar with terminology, naming conventions, or mechanisms from the source papers.
+- If you use a specialized term, define it immediately in plain language.
+- Include at least one concrete example or toy scenario showing what the idea would look like in practice.
+- If a compact technical restatement is useful, put it after the plain-language explanation, not before it.
 
 ## Output format
 
 For each candidate hypothesis, use this structure:
 
 ### Hypothesis Hn: <short name>
-- **Statement:** One clear, testable claim.
+- **Plain-English summary:** Explain the idea in 2-4 sentences for a reader who has not read the source papers.
+- **Detailed explanation:** Explain what the hypothesis is claiming, what setup it assumes, and why it might work.
+- **Definitions of key terms:** Define any specialized terms, mechanisms, or evaluation language in plain words.
 - **Motivation:** Why this follows from the goal and literature.
 - **Mechanism / intuition:** Why it might work.
 - **Expected benefit:** What it could improve and under what conditions.
 - **Key assumptions:** What must be true for it to hold.
+- **Concrete example:** Give a small example or scenario showing what the idea would look like in practice.
 - **How to falsify:** What result would strongly count against it.
 - **Evidence basis:** Which papers/findings/gaps motivated it.
 - **Risk level:** Low / medium / high.
+- **Compact technical version (optional):** A shorter technical restatement, only if it adds clarity after the plain-language explanation.
 
 ## Selection guidance
 

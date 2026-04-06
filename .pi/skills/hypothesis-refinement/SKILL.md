@@ -23,6 +23,7 @@ Produce a revised hypothesis that is:
 - more testable
 - less overstated
 - better aligned with the literature
+- self-contained and understandable to a reader who has not read the source papers
 
 ## Workflow
 
@@ -42,7 +43,9 @@ Produce a revised hypothesis that is:
    - split one hypothesis into multiple narrower ones
 5. Produce a revised version.
 6. Explain what changed and why.
-7. If the idea is not salvageable, say so clearly instead of forcing a weak revision.
+7. Rewrite confusing or compressed language into plain, self-contained explanation.
+8. Define non-obvious terms rather than assuming familiarity with source-paper terminology.
+9. If the idea is not salvageable, say so clearly instead of forcing a weak revision.
 
 ## Good practices
 
@@ -51,15 +54,24 @@ Produce a revised hypothesis that is:
 - Make assumptions explicit.
 - Make falsification conditions sharper.
 - Avoid pretending unresolved issues are fixed if they are only partially addressed.
+- Assume the reader has not read the source papers.
+- Replace compressed insider language with plain explanation.
+- If a specialized term is necessary, define it immediately.
+- Include at least one concrete example or scenario when it helps clarify the revision.
+- Prefer clarity over brevity, even if the revised artifact becomes longer.
 
 ## Output format
 
 ### Revised hypothesis
-- **Statement:**
+- **Plain-English summary:** Explain the revised idea in 2-4 sentences for a reader unfamiliar with the source papers.
+- **Detailed explanation:** Explain what changed, what the revised claim is, and why it is more defensible.
+- **Definitions of key terms:** Define any specialized terms or methodological language in plain words.
 - **Motivation:**
 - **Mechanism / intuition:**
 - **Key assumptions:**
+- **Concrete example:**
 - **How to falsify:**
+- **Compact technical version (optional):** Only if useful after the plain explanation.
 
 ### What changed
 - Change 1
