@@ -75,7 +75,7 @@ Example:
 /skill:literature-review
 Prepare an in-depth literature report on test-time self-improvement in language models.
 Compare main method families, identify strongest papers, and highlight evaluation weaknesses and unresolved questions.
-Use the summary template in @research/templates/literature-summary.md.
+Use the summary template in @templates/literature-summary.md.
 ```
 
 Good outputs to save:

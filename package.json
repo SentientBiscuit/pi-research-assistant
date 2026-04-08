@@ -1,0 +1,16 @@
+{
+  "name": "pi-research-assistant",
+  "version": "0.1.0",
+  "description": "A pi package for scientific research.",
+  "license": "MIT",
+  "private": false,
+  "keywords": ["pi-package"],
+  "pi": {
+    "extensions": ["./extensions"],
+    "skills": ["./skills"]
+  },
+  "peerDependencies": {
+    "@mariozechner/pi-coding-agent": "*",
+    "@sinclair/typebox": "*"
+  }
+}

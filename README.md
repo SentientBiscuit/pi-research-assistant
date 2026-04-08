@@ -3,8 +3,8 @@
 This project turns [pi](https://github.com/badlogic/pi-mono) into a personal research assistant for scientific literature review, hypothesis generation, skeptical evaluation, refinement, and research planning.
 
 It is built around:
-- **local pi skills** in `.pi/skills/`
-- **local pi extensions** in `.pi/extensions/`
+- **local pi skills** in `skills/`
+- **local pi extensions** in `extensions/`
 - a **human-guided workflow** using separate sessions, files, and reusable role modes
 
 The current setup is aimed at research exploration rather than fully autonomous operation.
@@ -37,7 +37,7 @@ Role-oriented modes for research work:
 - `research-planning`
 
 ### Extension tools
-Currently in `.pi/extensions/literature-tools.ts`:
+Currently in `extensions/literature-tools.ts`:
 - `semantic_scholar_search`
 - `arxiv_download_source`
 
@@ -90,6 +90,28 @@ After changing local skills or extensions, reload pi:
 /reload
 ```
 
+## Install this project as a pi package
+
+This repository is structured as a **pi package** and can be installed directly from GitHub.
+
+Global install:
+
+```bash
+pi install git:github.com/odubo/pi-research-assistant
+```
+
+Project-local install:
+
+```bash
+pi install -l git:github.com/odubo/pi-research-assistant
+```
+
+You can also test the local checkout directly:
+
+```bash
+pi install -l .
+```
+
 ## How this project is meant to be used
 
 This repo favors a **human-guided, steerable research workflow**.
@@ -103,7 +125,9 @@ Recommended pattern:
 
 See also:
 - `SKILLS_GUIDE.md`
-- `research/templates/`
+- `templates/`
+
+The files under `templates/` are kept as **supplementary writing templates**. They are not pi skills themselves; they are reference scaffolds you can point pi to when you want a specific artifact structure.
 
 ## Extensions, skills, and worker-like sessions
 
@@ -111,7 +135,7 @@ See also:
 Skills are reusable role definitions and workflows. In this repo they live under:
 
 ```text
-.pi/skills/
+skills/
 ```
 
 You can invoke them with commands like:
@@ -126,7 +150,7 @@ You can invoke them with commands like:
 Extensions are TypeScript modules that add custom tools, commands, and behavior. In this repo they live under:
 
 ```text
-.pi/extensions/
+extensions/
 ```
 
 Example: `literature-tools.ts` adds literature search and arXiv source download tools.
