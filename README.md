@@ -21,7 +21,7 @@ I chose pi over similar open-source projects for research work for a few reasons
 
 4. **It is naturally interactive and steerable.** Many prior systems for AI-assisted scientific discovery are workflow-like rather than truly agentic: they execute a fixed pipeline. Pi is different. Interactivity lets you guide the agent turn by turn, improving alignment with the research goal and often leading to better output. Agency matters too: the agent has enough freedom to reason, explore, and try different approaches without being told every step explicitly. In practice, that often surfaces new questions and promising directions mid-process.
 
-5. **Branching and tree navigation are genuinely useful for research.** Pi makes it easy to explore alternative directions, compare different hypothesis branches, revisit prior reasoning, and try different critique paths. You can fork at a checkpoint with /fork or /tree commands and explore one hypothesis direction, then another, then compare them. This is also very useful for experimenting with different prompting strategies and different pi configurations.
+5. **Branching and tree navigation are genuinely useful for research.** Pi makes it easy to explore alternative directions, compare different hypothesis branches, revisit prior reasoning, and try different critique paths. You can fork at a checkpoint with `/fork` or `/tree` commands and explore one hypothesis direction, then another, then compare them. This is also very useful for experimenting with different prompting strategies and different pi configurations.
 
 6. **It already implements the hard infrastructure.** Pi already has the difficult pieces in place: agent runtime, tool calling, session handling, and state management. That means this project can focus on adapting pi to research use cases rather than building the entire substrate from scratch before it becomes useful.
 
@@ -97,13 +97,13 @@ This repository is structured as a **pi package** and can be installed directly 
 Global install:
 
 ```bash
-pi install git:github.com/odubo/pi-research-assistant
+pi install git:github.com/SentientBiscuit/pi-research-assistant
 ```
 
 Project-local install:
 
 ```bash
-pi install -l git:github.com/odubo/pi-research-assistant
+pi install -l git:github.com/SentientBiscuit/pi-research-assistant
 ```
 
 You can also test the local checkout directly:
