@@ -9,6 +9,22 @@ It is built around:
 
 The current setup is aimed at research exploration rather than fully autonomous operation.
 
+## Motivation: why pi
+
+I chose pi over similar open-source projects for research work for a few reasons.
+
+1. **It can extend itself easily.** Pi extensions are well-documented, and there are multiple examples to learn from. That makes it unusually easy to adapt pi to new research workflows, tools, and interaction patterns without rebuilding the whole stack.
+
+2. **It works naturally with source files and repositories.** Pi already has filesystem-oriented tools, so it can inspect paper source files, code repositories, notes, and local artifacts directly. This is also extremely useful for storing intermediate state in complex tasks.
+
+3. **It has excellent observability.** You can see exactly which files and lines the agent read. That matters a lot in research workflows, because many agents give the impression they have inspected something when they actually have not. Pi makes file access visible and inspectable.
+
+4. **It is naturally interactive and steerable.** Many prior systems for AI-assisted scientific discovery are workflow-like rather than truly agentic: they execute a fixed pipeline. Pi is different. Interactivity lets you guide the agent turn by turn, improving alignment with the research goal and often leading to better output. Agency matters too: the agent has enough freedom to reason, explore, and try different approaches without being told every step explicitly. In practice, that often surfaces new questions and promising directions mid-process.
+
+5. **Branching and tree navigation are genuinely useful for research.** Pi makes it easy to explore alternative directions, compare different hypothesis branches, revisit prior reasoning, and try different critique paths. You can fork at a checkpoint with /fork or /tree commands and explore one hypothesis direction, then another, then compare them. This is also very useful for experimenting with different prompting strategies and different pi configurations.
+
+6. **It already implements the hard infrastructure.** Pi already has the difficult pieces in place: agent runtime, tool calling, session handling, and state management. That means this project can focus on adapting pi to research use cases rather than building the entire substrate from scratch before it becomes useful.
+
 ## What this repo contains
 
 ### Skills
