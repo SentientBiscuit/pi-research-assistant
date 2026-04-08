@@ -1,7 +1,5 @@
 node_modules/
-.pi/cache/
-.pi/git/
-.pi/npm/
+.pi/
 .DS_Store
 *.log
 .env
