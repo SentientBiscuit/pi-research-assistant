@@ -102,8 +102,8 @@ Recommended pattern:
 - keep durable artifacts in files under `research/`
 
 See also:
-- `RESEARCH_WORKFLOW.md`
-- `research/literature/SUMMARY_TEMPLATE.md`
+- `SKILLS_GUIDE.md`
+- `research/templates/`
 
 ## Extensions, skills, and worker-like sessions
 
